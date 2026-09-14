@@ -33,55 +33,54 @@ function saveScores(scores) {
 }
 
 // Helper function to load trivia questions from teagames.txt
-function loadQuestions() {
+function loadTriviaQuestions() {
     try {
         if (fs.existsSync('teagames.txt')) {
             const data = fs.readFileSync('teagames.txt', 'utf8');
-            return data.split('\n')
-                .map(line => line.trim())
-                .filter(line => line.includes('|'))
-                .map(line => {
-                    const [question, answer] = line.split('|');
-                    return { question: question.trim(), answer: answer.trim().toLowerCase() };
-                });
+            const lines = data.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            const questions = [];
+            for (let i = 0; i < lines.length; i += 2) {
+                if (lines[i+1]) {
+                    questions.push({ question: lines[i], answer: lines[i+1].toLowerCase() });
+                }
+            }
+            return questions;
         }
     } catch (err) {
-        console.error('Error loading questions:', err);
+        console.error('Error loading trivia:', err);
     }
     return [];
 }
 
 client.once('ready', () => {
-    console.log(`Cozy Tea Bot logged in as ${client.user.tag}!`);
+    console.log(`CozyTavernBot is online as ${client.user.tag}! 🍵`);
 });
 
 client.on('messageCreate', async message => {
-    // Ignore messages from the bot itself
     if (message.author.bot) return;
 
-    // 1. Handle !brew command (restricted to you and the designated channel)
-    if (message.content === '!brew') {
-        if (message.channel.id !== CHANNEL_ID) return;
-        if (message.author.id !== YOUR_DISCORD_USER_ID) {
-            return message.reply("Only the tavern keeper can brew a fresh round!");
+    // 1. Handle !toptea leaderboard command
+    if (message.content === '!toptea') {
+        const scores = loadScores();
+        const sortedScores = Object.entries(scores).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+        if (sortedScores.length === 0) {
+            return message.reply('🌱 No tea scores recorded yet! Be the first to brew a correct answer.');
         }
 
-        const questions = loadQuestions();
-        if (questions.length === 0) {
-            return message.reply("The tea cupboard is empty! Make sure `teagames.txt` has questions formatted as `Question | Answer`.");
-        }
+        let leaderboardText = '🏆 **Cozy Tavern Tea Leaderboard** 🏆\n';
+        sortedScores.forEach(([userId, pts], index) => {
+            leaderboardText += `${index + 1}. <@${userId}> — **${pts}** points\n`;
+        });
 
-        const randomQ = questions[Math.floor(Math.random() * questions.length)];
-        activeAnswer = randomQ.answer;
-
-        return message.channel.id === CHANNEL_ID ? message.channel.send(`🍵 **Fresh Tea Trivia Brewed!**\n${randomQ.question}`) : null;
+        return message.reply(leaderboardText);
     }
 
     // 2. Handle !tea-score command
     if (message.content === '!tea-score') {
         const scores = loadScores();
         const userScore = scores[message.author.id] || 0;
-        return message.reply(`Your current cozy tea score is: **${userScore}** points! 🍃`);
+        return message.reply(`Your current cozy tea score is: **${userScore}** points! 🍵`);
     }
 
     // 3. Check guesses from anyone in the designated channel
@@ -97,6 +96,30 @@ client.on('messageCreate', async message => {
             activeAnswer = null; // Reset the riddle
         }
     }
+
+    // 4. Admin command to trigger a trivia question (restricted to your user ID)
+    if (message.content === '!starttea' && message.author.id === YOUR_DISCORD_USER_ID) {
+        const questions = loadTriviaQuestions();
+        if (questions.length === 0) {
+            return message.reply('⚠️ No trivia questions found in `teagames.txt`!');
+        }
+
+        const randomQ = questions[Math.floor(Math.random() * questions.length)];
+        activeAnswer = randomQ.answer;
+
+        return message.channel.send(`🫖 **Cozy Tea Trivia Time!**\n${randomQ.question}`);
+    }
+});
+
+// Keep Render web service happy by listening on a port
+const http = require('http');
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('CozyTavernBot is alive!\n');
+});
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Server is listening on port ${PORT}`);
 });
 
 client.login(TOKEN);
