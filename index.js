@@ -32,16 +32,19 @@ function saveScores(scores) {
     fs.writeFileSync('scores.json', JSON.stringify(scores, null, 2));
 }
 
-// Helper function to load trivia questions from teagames.txt
+// Helper function to load trivia questions from teagames.txt and split correctly at '|'
 function loadTriviaQuestions() {
     try {
         if (fs.existsSync('teagames.txt')) {
             const data = fs.readFileSync('teagames.txt', 'utf8');
             const lines = data.split('\n').map(l => l.trim()).filter(l => l.length > 0);
             const questions = [];
-            for (let i = 0; i < lines.length; i += 2) {
-                if (lines[i+1]) {
-                    questions.push({ question: lines[i], answer: lines[i+1].toLowerCase() });
+            for (const line of lines) {
+                if (line.includes('|')) {
+                    const parts = line.split('|');
+                    const question = parts[0].trim();
+                    const answer = parts[1].trim().toLowerCase();
+                    questions.push({ question, answer });
                 }
             }
             return questions;
