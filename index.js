@@ -14,6 +14,7 @@ const CHANNEL_ID = '1316737376789332079';
 const YOUR_DISCORD_USER_ID = '1162102433032454254';
 
 let activeAnswer = null;
+let recentQuestions = []; // Keeps track of recently asked questions to prevent repeats
 
 // Helper function to load scores from a local file so they don't disappear if the bot restarts
 function loadScores() {
@@ -107,8 +108,24 @@ client.on('messageCreate', async message => {
             return message.reply('⚠️ No trivia questions found in `teagames.txt`!');
         }
 
-        const randomQ = questions[Math.floor(Math.random() * questions.length)];
+        // Filter out questions that were recently asked
+        let availableQuestions = questions.filter(q => !recentQuestions.includes(q.question));
+
+        // If we've cycled through all of them, reset the recent list so it can start fresh
+        if (availableQuestions.length === 0) {
+            recentQuestions = [];
+            availableQuestions = questions;
+        }
+
+        // Pick a random question from the unasked pool
+        const randomQ = availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
         activeAnswer = randomQ.answer;
+
+        // Track this question in recent history (keeping the last 5)
+        recentQuestions.push(randomQ.question);
+        if (recentQuestions.length > 5) {
+            recentQuestions.shift();
+        }
 
         return message.channel.send(`🫖 **Cozy Tea Trivia Time!**\n${randomQ.question}`);
     }
@@ -127,17 +144,16 @@ server.listen(PORT, () => {
 
 client.login(TOKEN);
 
-// --- RENDER KEEP-ALIVE PING ---
-const INTERVAL_MINUTES = 10;
+// --- RENDER KEEP-ALIVE PING (EVERY 10 SECONDS) ---
 const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
 
 if (RENDER_URL) {
-    setInterval(async () => {
-        try {
-            const response = await fetch(RENDER_URL);
-            console.log(`[Keep-Alive] Pinged self successfully: ${response.status}`);
-        } catch (error) {
-            console.error('[Keep-Alive] Ping failed:', error.message);
-        }
-    }, INTERVAL_MINUTES * 60 * 1000);
+    setInterval(() => {
+        http.get(RENDER_URL, (res) => {
+            // Optional: comment out the console log below if you don't want your logs flooded every 10 seconds
+            console.log(`[Keep-Alive] Pinged self: ${res.statusCode}`);
+        }).on('error', (err) => {
+            console.error('[Keep-Alive] Ping failed:', err.message);
+        });
+    }, 10 * 1000); // 10 seconds in milliseconds
 }
