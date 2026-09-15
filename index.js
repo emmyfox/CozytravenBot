@@ -126,3 +126,18 @@ server.listen(PORT, () => {
 });
 
 client.login(TOKEN);
+
+// --- RENDER KEEP-ALIVE PING ---
+const INTERVAL_MINUTES = 10;
+const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
+
+if (RENDER_URL) {
+    setInterval(async () => {
+        try {
+            const response = await fetch(RENDER_URL);
+            console.log(`[Keep-Alive] Pinged self successfully: ${response.status}`);
+        } catch (error) {
+            console.error('[Keep-Alive] Ping failed:', error.message);
+        }
+    }, INTERVAL_MINUTES * 60 * 1000);
+}
