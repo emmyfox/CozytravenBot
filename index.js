@@ -1,5 +1,7 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const fs = require('fs');
+const https = require('https');
+const http = require('http');
 
 const client = new Client({
     intents: [
@@ -14,9 +16,9 @@ const CHANNEL_ID = '1316737376789332079';
 const YOUR_DISCORD_USER_ID = '1162102433032454254';
 
 let activeAnswer = null;
-let recentQuestions = []; // Keeps track of recently asked questions to prevent repeats
+let recentQuestions = [];
 
-// Helper function to load scores from a local file so they don't disappear if the bot restarts
+// Helper function to load scores from a local file
 function loadScores() {
     try {
         if (fs.existsSync('scores.json')) {
@@ -33,7 +35,7 @@ function saveScores(scores) {
     fs.writeFileSync('scores.json', JSON.stringify(scores, null, 2));
 }
 
-// Helper function to load trivia questions from teagames.txt and split correctly at '|'
+// Helper function to load trivia questions from teagames.txt
 function loadTriviaQuestions() {
     try {
         if (fs.existsSync('teagames.txt')) {
@@ -97,31 +99,27 @@ client.on('messageCreate', async message => {
             saveScores(scores);
 
             message.channel.send(`✨ Spot on, <@${message.author.id}>! You brewed it right. The answer was **${activeAnswer}**. (+1 point) 🍵`);
-            activeAnswer = null; // Reset the riddle
+            activeAnswer = null;
         }
     }
 
-    // 4. Admin command to trigger a trivia question (restricted to your user ID)
+    // 4. Admin command to trigger a trivia question
     if (message.content === '!starttea' && message.author.id === YOUR_DISCORD_USER_ID) {
         const questions = loadTriviaQuestions();
         if (questions.length === 0) {
             return message.reply('⚠️ No trivia questions found in `teagames.txt`!');
         }
 
-        // Filter out questions that were recently asked
         let availableQuestions = questions.filter(q => !recentQuestions.includes(q.question));
 
-        // If we've cycled through all of them, reset the recent list so it can start fresh
         if (availableQuestions.length === 0) {
             recentQuestions = [];
             availableQuestions = questions;
         }
 
-        // Pick a random question from the unasked pool
         const randomQ = availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
         activeAnswer = randomQ.answer;
 
-        // Track this question in recent history (keeping the last 5)
         recentQuestions.push(randomQ.question);
         if (recentQuestions.length > 5) {
             recentQuestions.shift();
@@ -131,8 +129,7 @@ client.on('messageCreate', async message => {
     }
 });
 
-// Keep Render web service happy by listening on a port
-const http = require('http');
+// Keep Render web service happy by listening on the assigned port
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('CozyTavernBot is alive!\n');
@@ -144,16 +141,15 @@ server.listen(PORT, () => {
 
 client.login(TOKEN);
 
-// --- RENDER KEEP-ALIVE PING (EVERY 10 SECONDS) ---
+// --- SAFE KEEP-ALIVE PING (SUPPORTS HTTPS) ---
 const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
 
 if (RENDER_URL) {
     setInterval(() => {
-        http.get(RENDER_URL, (res) => {
-            // Optional: comment out the console log below if you don't want your logs flooded every 10 seconds
-            console.log(`[Keep-Alive] Pinged self: ${res.statusCode}`);
+        https.get(RENDER_URL, (res) => {
+            // Quiet background ping
         }).on('error', (err) => {
-            console.error('[Keep-Alive] Ping failed:', err.message);
+            // Ignore background network blips so it never crashes
         });
-    }, 10 * 1000); // 10 seconds in milliseconds
+    }, 10 * 1000); 
 }
