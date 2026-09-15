@@ -16,7 +16,7 @@ const CHANNEL_ID = '1316737376789332079';
 const YOUR_DISCORD_USER_ID = '1162102433032454254';
 
 let activeAnswer = null;
-let recentQuestions = [];
+let recentQuestions = []; // Memory tracker to prevent back-to-back repeats
 
 // Helper function to load scores from a local file
 function loadScores() {
@@ -103,23 +103,27 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // 4. Admin command to trigger a trivia question
+    // 4. Admin command to trigger a trivia question (with anti-repeat logic)
     if (message.content === '!starttea' && message.author.id === YOUR_DISCORD_USER_ID) {
         const questions = loadTriviaQuestions();
         if (questions.length === 0) {
             return message.reply('⚠️ No trivia questions found in `teagames.txt`!');
         }
 
+        // Filter out questions that were recently asked
         let availableQuestions = questions.filter(q => !recentQuestions.includes(q.question));
 
+        // If all questions have been used recently, reset the memory pool
         if (availableQuestions.length === 0) {
             recentQuestions = [];
             availableQuestions = questions;
         }
 
+        // Pick a random unasked question
         const randomQ = availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
         activeAnswer = randomQ.answer;
 
+        // Track this question in recent history (keeping the last 5)
         recentQuestions.push(randomQ.question);
         if (recentQuestions.length > 5) {
             recentQuestions.shift();
@@ -141,15 +145,15 @@ server.listen(PORT, () => {
 
 client.login(TOKEN);
 
-// --- SAFE KEEP-ALIVE PING (SUPPORTS HTTPS) ---
+// --- SAFE KEEP-ALIVE PING ---
 const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
 
 if (RENDER_URL) {
     setInterval(() => {
         https.get(RENDER_URL, (res) => {
-            // Quiet background ping
+            // Quiet background keep-alive ping
         }).on('error', (err) => {
-            // Ignore background network blips so it never crashes
+            // Suppress errors to prevent crashing
         });
     }, 10 * 1000); 
 }
