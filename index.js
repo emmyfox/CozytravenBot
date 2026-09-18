@@ -1,5 +1,4 @@
 const { Client, GatewayIntentBits } = require('discord.js');
-const fs = require('fs');
 const https = require('https');
 const http = require('http');
 
@@ -15,29 +14,80 @@ const TOKEN = process.env.DISCORD_TOKEN;
 const CHANNEL_ID = '1316737376789332079';
 const YOUR_DISCORD_USER_ID = '1162102433032454254';
 
-let activeAnswer = null;
-let recentQuestions = []; // Memory tracker to prevent back-to-back repeats
+// JSONBin credentials from Render environment variables
+const JSONBIN_KEY = process.env.JSONBIN_KEY;
+const JSONBIN_BIN_ID = process.env.JSONBIN_BIN_ID;
 
-// Helper function to load scores from a local file
+let activeAnswer = null;
+let recentQuestions = [];
+
+// --- CLOUD STORAGE FUNCTIONS (JSONBin) ---
 function loadScores() {
-    try {
-        if (fs.existsSync('scores.json')) {
-            return JSON.parse(fs.readFileSync('scores.json', 'utf8'));
+    return new Promise((resolve) => {
+        if (!JSONBIN_KEY || !JSONBIN_BIN_ID) {
+            console.error('JSONBin credentials missing!');
+            return resolve({});
         }
-    } catch (err) {
-        console.error('Error loading scores:', err);
-    }
-    return {};
+
+        const options = {
+            hostname: 'api.jsonbin.io',
+            path: `/v3/b/${JSONBIN_BIN_ID}/latest`,
+            method: 'GET',
+            headers: {
+                'X-Master-Key': JSONBIN_KEY
+            }
+        };
+
+        https.get(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                try {
+                    const parsed = JSON.parse(data);
+                    resolve(parsed.record || {});
+                } catch (err) {
+                    console.error('Error parsing cloud scores:', err);
+                    resolve({});
+                }
+            });
+        }).on('error', (err) => {
+            console.error('Error fetching cloud scores:', err);
+            resolve({});
+        });
+    });
 }
 
-// Helper function to save scores to a local file
 function saveScores(scores) {
-    fs.writeFileSync('scores.json', JSON.stringify(scores, null, 2));
+    if (!JSONBIN_KEY || !JSONBIN_BIN_ID) return;
+
+    const data = JSON.stringify(scores);
+    const options = {
+        hostname: 'api.jsonbin.io',
+        path: `/v3/b/${JSONBIN_BIN_ID}`,
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Master-Key': JSONBIN_KEY,
+            'Content-Length': Buffer.byteLength(data)
+        }
+    };
+
+    const req = https.request(options, (res) => {
+        // Cloud save confirmed
+    });
+
+    req.on('error', (err) => {
+        console.error('Error saving to cloud:', err);
+    });
+
+    req.write(data);
+    req.end();
 }
 
 // Helper function to load trivia questions from teagames.txt
 function loadTriviaQuestions() {
     try {
+        const fs = require('fs');
         if (fs.existsSync('teagames.txt')) {
             const data = fs.readFileSync('teagames.txt', 'utf8');
             const lines = data.split('\n').map(l => l.trim()).filter(l => l.length > 0);
@@ -67,7 +117,7 @@ client.on('messageCreate', async message => {
 
     // 1. Handle !toptea leaderboard command
     if (message.content === '!toptea') {
-        const scores = loadScores();
+        const scores = await loadScores();
         const sortedScores = Object.entries(scores).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
         if (sortedScores.length === 0) {
@@ -84,7 +134,7 @@ client.on('messageCreate', async message => {
 
     // 2. Handle !tea-score command
     if (message.content === '!tea-score') {
-        const scores = loadScores();
+        const scores = await loadScores();
         const userScore = scores[message.author.id] || 0;
         return message.reply(`Your current cozy tea score is: **${userScore}** points! 🍵`);
     }
@@ -94,7 +144,7 @@ client.on('messageCreate', async message => {
         const userGuess = message.content.trim().toLowerCase();
 
         if (userGuess.includes(activeAnswer)) {
-            let scores = loadScores();
+            let scores = await loadScores();
             scores[message.author.id] = (scores[message.author.id] || 0) + 1;
             saveScores(scores);
 
@@ -110,30 +160,26 @@ client.on('messageCreate', async message => {
             return message.reply('⚠️ No trivia questions found in `teagames.txt`!');
         }
 
-        // Filter out questions that were recently asked
         let availableQuestions = questions.filter(q => !recentQuestions.includes(q.question));
 
-        // If all questions have been used recently, reset the memory pool
         if (availableQuestions.length === 0) {
             recentQuestions = [];
             availableQuestions = questions;
         }
 
-        // Pick a random unasked question
         const randomQ = availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
         activeAnswer = randomQ.answer;
 
-        // Track this question in recent history (keeping the last 5)
         recentQuestions.push(randomQ.question);
         if (recentQuestions.length > 5) {
             recentQuestions.shift();
         }
 
-        return message.channel.send(`🫖 **Cozy Tea Trivia Time!**\n${randomQ.question}`);
+        return message.channel.send(`${randomQ.question}`);
     }
 });
 
-// Keep Render web service happy by listening on the assigned port
+// Keep Render web service happy
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('CozyTavernBot is alive!\n');
@@ -150,10 +196,6 @@ const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
 
 if (RENDER_URL) {
     setInterval(() => {
-        https.get(RENDER_URL, (res) => {
-            // Quiet background keep-alive ping
-        }).on('error', (err) => {
-            // Suppress errors to prevent crashing
-        });
+        https.get(RENDER_URL, (res) => {}).on('error', (err) => {});
     }, 10 * 1000); 
 }
