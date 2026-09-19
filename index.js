@@ -21,11 +21,10 @@ const JSONBIN_BIN_ID = process.env.JSONBIN_BIN_ID;
 let activeAnswer = null;
 let recentQuestions = [];
 
-// --- CLOUD STORAGE FUNCTIONS (JSONBin) ---
+// --- BULLETPROOF CLOUD STORAGE FUNCTIONS ---
 function loadScores() {
     return new Promise((resolve) => {
         if (!JSONBIN_KEY || !JSONBIN_BIN_ID) {
-            console.error('JSONBin credentials missing!');
             return resolve({});
         }
 
@@ -38,7 +37,8 @@ function loadScores() {
             }
         };
 
-        https.get(options, (res) => {
+        // Safety timeout so it never freezes forever if the network lags
+        const req = https.get(options, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
@@ -46,12 +46,17 @@ function loadScores() {
                     const parsed = JSON.parse(data);
                     resolve(parsed.record || {});
                 } catch (err) {
-                    console.error('Error parsing cloud scores:', err);
                     resolve({});
                 }
             });
-        }).on('error', (err) => {
-            console.error('Error fetching cloud scores:', err);
+        });
+
+        req.on('error', () => {
+            resolve({});
+        });
+
+        req.setTimeout(3000, () => {
+            req.destroy();
             resolve({});
         });
     });
@@ -72,14 +77,8 @@ function saveScores(scores) {
         }
     };
 
-    const req = https.request(options, (res) => {
-        // Cloud save confirmed
-    });
-
-    req.on('error', (err) => {
-        console.error('Error saving to cloud:', err);
-    });
-
+    const req = https.request(options, () => {});
+    req.on('error', () => {});
     req.write(data);
     req.end();
 }
