@@ -11,7 +11,7 @@ const client = new Client({
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
-const CHANNEL_ID = '1316737376789332079';
+const CHANNEL_ID = '1550949617640677528';
 const YOUR_DISCORD_USER_ID = '1162102433032454254';
 
 // JSONBin credentials from Render environment variables
